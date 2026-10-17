@@ -7,6 +7,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import statsmodels.api as sm
+import plotly.graph_objects as go
 
 # ---------- Pengaturan halaman ----------
 st.set_page_config(page_title="Dashboard Data Panel Fiskal", page_icon="📊", layout="wide")
@@ -42,7 +43,8 @@ else:
 st.subheader(f"📍 {judul} ({tahun[0]}-{tahun[1]})")
 
 # ---------- Tab ----------
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["Ringkasan", "Tren", "Korelasi", "Regresi", "Machine Learning"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+    ["Ringkasan", "Tren", "Korelasi", "Regresi", "Machine Learning", "Regresi 3D"])
 
 # === Tab 1: Ringkasan ===
 with tab1:
@@ -178,3 +180,53 @@ with tab5:
 
             st.caption("R² mendekati 1 = prediksi bagus. R² mendekati 0 atau negatif = "
                        "model tidak lebih baik dari menebak rata-rata.")
+
+            # === Tab 6: Regresi Linear Berganda 3D ===
+with tab6:
+    st.markdown("### 🧊 Regresi Linear Berganda 3D")
+    st.caption("Y = b0 + b1·X1 + b2·X2. Titik = data aktual, bidang = hasil regresi.")
+
+    pilih_x = fiskal + belanja
+    c1, c2, c3 = st.columns(3)
+    x1 = c1.selectbox("Variabel X1", pilih_x, index=pilih_x.index("PAD"), key="x1_3d")
+    x2 = c2.selectbox("Variabel X2", pilih_x, index=pilih_x.index("DAU_Grant"), key="x2_3d")
+    y3 = c3.selectbox("Variabel Y", outcome, index=3, key="y_3d")
+
+    if x1 == x2:
+        st.warning("X1 dan X2 harus beda ya.")
+    elif len(data) < 5:
+        st.warning("Data terlalu sedikit. Perluas rentang tahun atau pilih 'Semua Kota'.")
+    else:
+        X3 = sm.add_constant(data[[x1, x2]])
+        m3 = sm.OLS(data[y3], X3).fit()
+        b0, b1, b2 = m3.params["const"], m3.params[x1], m3.params[x2]
+
+        k1, k2, k3 = st.columns(3)
+        k1.metric("R-squared", f"{m3.rsquared:.3f}")
+        k2.metric("Adj. R-squared", f"{m3.rsquared_adj:.3f}")
+        k3.metric("Prob (F-stat)", f"{m3.f_pvalue:.4f}")
+
+        st.info(f"**Persamaan:** {y3} = {b0:.3f} + ({b1:.4f} × {x1}) + ({b2:.4f} × {x2})")
+
+        # bidang regresi
+        g1 = np.linspace(data[x1].min(), data[x1].max(), 20)
+        g2 = np.linspace(data[x2].min(), data[x2].max(), 20)
+        xx, yy = np.meshgrid(g1, g2)
+        zz = b0 + b1 * xx + b2 * yy
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter3d(
+            x=data[x1], y=data[x2], z=data[y3], mode="markers",
+            marker=dict(size=3, opacity=0.7), name="Data aktual"))
+        fig.add_trace(go.Surface(
+            x=xx, y=yy, z=zz, opacity=0.5, showscale=False, name="Bidang regresi"))
+        fig.update_layout(
+            height=650, margin=dict(l=0, r=0, t=30, b=0),
+            scene=dict(xaxis_title=x1, yaxis_title=x2, zaxis_title=y3))
+        st.plotly_chart(fig, width="stretch")
+
+        hasil3 = pd.DataFrame({
+            "Koefisien": m3.params, "Std. Error": m3.bse,
+            "t-stat": m3.tvalues, "p-value": m3.pvalues}).round(4)
+        hasil3["Signifikan (5%)"] = hasil3["p-value"].apply(lambda p: "Ya" if p < 0.05 else "Tidak")
+        st.dataframe(hasil3, width="stretch")
