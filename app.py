@@ -26,6 +26,19 @@ fiskal = ["DBH_PAJAK", "DBH_SDA", "DBH_Lainnya", "DAU_Grant", "DAU_Earmark",
 belanja = [c for c in df.columns if c.startswith("bm_")]
 outcome = ["KEMISKINAN", "PENGANGGURAN", "KETIMPANGAN", "IPM", "PE"]
 
+def kekuatan(r):
+    a = abs(r)
+    if a >= 0.7: return "sangat kuat"
+    if a >= 0.5: return "kuat"
+    if a >= 0.3: return "sedang"
+    if a >= 0.1: return "lemah"
+    return "sangat lemah"
+
+def tafsir_r2(r2):
+    if r2 >= 0.5: return "cukup baik"
+    if r2 >= 0.2: return "terbatas"
+    return "sangat rendah"
+
 # ---------- Sidebar (filter) ----------
 st.sidebar.header("⚙️ Filter")
 mode = st.sidebar.radio("Cakupan data", ["Satu Kota", "Semua Kota"])
@@ -60,6 +73,25 @@ with tab1:
     st.markdown("**Statistik deskriptif**")
     st.dataframe(data[fiskal + outcome].describe().T, width="stretch")
 
+    st.markdown("#### 📝 Interpretasi")
+    rata_all = df[df.Tahun.between(*tahun)][outcome].mean()
+    arti = {"IPM": "semakin tinggi semakin baik",
+            "KEMISKINAN": "semakin rendah semakin baik",
+            "PENGANGGURAN": "semakin rendah semakin baik",
+            "KETIMPANGAN": "semakin rendah (mendekati 0) semakin merata",
+            "PE": "semakin tinggi semakin baik"}
+    if mode == "Satu Kota":
+        for v in outcome:
+            nilai = data[v].mean()
+            banding = "di atas" if nilai > rata_all[v] else "di bawah"
+            st.write(f"- **{v}** {judul} rata-rata **{nilai:.2f}**, {banding} rata-rata 97 kota "
+                     f"({rata_all[v]:.2f}). _({arti[v]})_")
+    else:
+        for v in outcome:
+            pk = data.groupby("Kota")[v].mean()
+            st.write(f"- **{v}** rata-rata **{data[v].mean():.2f}**. Tertinggi: {pk.idxmax()} "
+                     f"({pk.max():.2f}), terendah: {pk.idxmin()} ({pk.min():.2f}). _({arti[v]})_")
+
 # === Tab 2: Tren ===
 with tab2:
     var = st.selectbox("Pilih variabel", outcome + fiskal + belanja)
@@ -74,6 +106,18 @@ with tab2:
         fig2.update_layout(yaxis=dict(autorange="reversed"))
         st.plotly_chart(fig2, width="stretch")
 
+    if len(tren) >= 2:
+        awal, akhir = tren[var].iloc[0], tren[var].iloc[-1]
+        th_max = int(tren.loc[tren[var].idxmax(), "Tahun"])
+        th_min = int(tren.loc[tren[var].idxmin(), "Tahun"])
+        arah = "meningkat" if akhir > awal else "menurun"
+        st.markdown("#### 📝 Interpretasi")
+        st.write(f"Secara keseluruhan, {var} di {judul} **{arah}** dari {awal:.2f} "
+                 f"({int(tren.Tahun.iloc[0])}) menjadi {akhir:.2f} ({int(tren.Tahun.iloc[-1])}), "
+                 f"selisih {akhir - awal:+.2f}. Nilai tertinggi terjadi pada {th_max} dan "
+                 f"terendah pada {th_min}. Lihat juga pola grafik di atas, karena perubahan "
+                 f"antartahun bisa naik-turun dan tidak selalu searah dengan perubahan total.")
+
 # === Tab 3: Korelasi ===
 with tab3:
     pilih = st.multiselect("Variabel untuk korelasi", fiskal + belanja + outcome,
@@ -83,6 +127,16 @@ with tab3:
         fig = px.imshow(corr, text_auto=".2f", color_continuous_scale="RdBu_r",
                         zmin=-1, zmax=1, aspect="auto")
         st.plotly_chart(fig, width="stretch")
+        pasangan = corr.where(np.triu(np.ones(corr.shape, dtype=bool), k=1)).stack()
+        kuat = pasangan.abs().idxmax()
+        r = pasangan[kuat]
+        n_sedang = int((pasangan.abs() >= 0.3).sum())
+        arah = "positif" if r > 0 else "negatif"
+        st.markdown("#### 📝 Interpretasi")
+        st.write(f"Korelasi terkuat ada pada **{kuat[0]}** dan **{kuat[1]}** dengan r = **{r:.2f}** "
+                 f"(hubungan {arah}, kekuatan {kekuatan(r)}). Dari {len(pasangan)} pasangan variabel, "
+                 f"**{n_sedang}** pasangan memiliki korelasi sedang atau lebih (|r| ≥ 0.3). "
+                 f"Perlu diingat, korelasi hanya menunjukkan keterkaitan, bukan sebab-akibat.")
     else:
         st.info("Pilih minimal 2 variabel ya.")
 
@@ -130,6 +184,26 @@ with tab4:
         fig.add_shape(type="line", x0=data[y_var].min(), y0=data[y_var].min(),
                       x1=data[y_var].max(), y1=data[y_var].max(), line=dict(dash="dash"))
         st.plotly_chart(fig, width="stretch")
+
+        sig = hasil[(hasil["p-value"] < 0.05) & (hasil.index != "const")]
+        st.markdown("#### 📝 Interpretasi")
+        st.write(f"Nilai R² sebesar **{model.rsquared:.3f}**, artinya variabel X yang dipilih "
+                 f"menjelaskan sekitar **{model.rsquared * 100:.1f}%** variasi {y_var}; sisanya "
+                 f"dipengaruhi faktor lain di luar model. Daya jelas model tergolong "
+                 f"**{tafsir_r2(model.rsquared)}**.")
+        if model.f_pvalue < 0.05:
+            st.write(f"Uji F signifikan (p = {model.f_pvalue:.4f}): secara bersama-sama variabel X "
+                     f"berpengaruh terhadap {y_var}.")
+        else:
+            st.write(f"Uji F tidak signifikan (p = {model.f_pvalue:.4f}): secara bersama-sama "
+                     f"variabel X belum terbukti berpengaruh terhadap {y_var}.")
+        if len(sig) == 0:
+            st.write("Secara parsial, tidak ada variabel X yang signifikan pada taraf 5% (p-value > 0.05).")
+        else:
+            for v, row in sig.iterrows():
+                arah = "naik" if row["Koefisien"] > 0 else "turun"
+                st.write(f"- **{v}** signifikan (p = {row['p-value']:.4f}): setiap kenaikan 1 satuan {v}, "
+                         f"{y_var} rata-rata {arah} {abs(row['Koefisien']):.4f} satuan, dengan variabel lain tetap.")
 
         # === Tab 5: Machine Learning ===
 with tab5:
@@ -181,6 +255,21 @@ with tab5:
             st.caption("R² mendekati 1 = prediksi bagus. R² mendekati 0 atau negatif = "
                        "model tidak lebih baik dari menebak rata-rata.")
 
+            r2_rf = r2_score(y_test, pred)
+            r2_lr = r2_score(y_test, pred_lr)
+            rmse = np.sqrt(mean_squared_error(y_test, pred))
+            top = imp.iloc[-1]
+            lebih = "lebih baik" if r2_rf > r2_lr else "tidak lebih baik"
+            st.markdown("#### 📝 Interpretasi")
+            st.write(f"Random Forest menghasilkan R² data uji sebesar **{r2_rf:.3f}**, {lebih} "
+                     f"dibanding regresi linear (R² = {r2_lr:.3f}). Rata-rata kesalahan prediksi (RMSE) "
+                     f"**{rmse:.2f}**, atau sekitar **{rmse / data[y_ml].mean() * 100:.1f}%** dari rata-rata {y_ml}.")
+            st.write(f"Fitur dengan importance tertinggi adalah **{top['Fitur']}** ({top['Importance'] * 100:.1f}%). "
+                     f"Importance hanya menunjukkan seberapa sering fitur dipakai model, bukan arah pengaruhnya.")
+            if r2_rf < 0.2:
+                st.write(f"Karena R² masih rendah, model belum mampu memprediksi {y_ml} dengan baik. "
+                         f"Artinya variabel yang dipilih belum cukup menjelaskan {y_ml} pada data ini.")
+
             # === Tab 6: Regresi Linear Berganda 3D ===
 with tab6:
     st.markdown("### 🧊 Regresi Linear Berganda 3D")
@@ -230,3 +319,16 @@ with tab6:
             "t-stat": m3.tvalues, "p-value": m3.pvalues}).round(4)
         hasil3["Signifikan (5%)"] = hasil3["p-value"].apply(lambda p: "Ya" if p < 0.05 else "Tidak")
         st.dataframe(hasil3, width="stretch")
+
+        st.markdown("#### 📝 Interpretasi")
+        st.write(f"Model menjelaskan **{m3.rsquared * 100:.1f}%** variasi {y3} (R² = {m3.rsquared:.3f}), "
+                 f"tergolong **{tafsir_r2(m3.rsquared)}**. Uji F "
+                 f"{'signifikan' if m3.f_pvalue < 0.05 else 'tidak signifikan'} (p = {m3.f_pvalue:.4f}).")
+        for v, b in [(x1, b1), (x2, b2)]:
+            p = m3.pvalues[v]
+            arah = "naik" if b > 0 else "turun"
+            ket = "signifikan" if p < 0.05 else "tidak signifikan"
+            st.write(f"- **{v}**: koefisien {b:.4f} (p = {p:.4f}, {ket} pada 5%). Setiap kenaikan 1 satuan {v}, "
+                     f"{y3} diperkirakan {arah} {abs(b):.4f} satuan, dengan {x2 if v == x1 else x1} tetap.")
+        if abs(b1) + abs(b2) < 0.05:
+            st.write("Bidang regresi hampir datar, menandakan pengaruh kedua variabel terhadap Y sangat kecil.")
