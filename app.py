@@ -1,3 +1,8 @@
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -37,7 +42,7 @@ else:
 st.subheader(f"📍 {judul} ({tahun[0]}-{tahun[1]})")
 
 # ---------- Tab ----------
-tab1, tab2, tab3, tab4 = st.tabs(["Ringkasan", "Tren", "Korelasi", "Regresi"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["Ringkasan", "Tren", "Korelasi", "Regresi", "Machine Learning"])
 
 # === Tab 1: Ringkasan ===
 with tab1:
@@ -123,3 +128,53 @@ with tab4:
         fig.add_shape(type="line", x0=data[y_var].min(), y0=data[y_var].min(),
                       x1=data[y_var].max(), y1=data[y_var].max(), line=dict(dash="dash"))
         st.plotly_chart(fig, width="stretch")
+
+        # === Tab 5: Machine Learning ===
+with tab5:
+    st.markdown("### 🤖 Prediksi dengan Random Forest")
+
+    if mode == "Satu Kota":
+        st.warning("Data satu kota cuma sekitar 11 baris, terlalu sedikit untuk machine learning. "
+                   "Ganti ke **Semua Kota** di sidebar.")
+    else:
+        y_ml = st.selectbox("Variabel yang diprediksi (Y)", outcome, index=3, key="y_ml")
+        x_ml = st.multiselect("Fitur (X)", fiskal + belanja, default=fiskal, key="x_ml")
+
+        c1, c2 = st.columns(2)
+        test_size = c1.slider("Porsi data uji (%)", 10, 40, 20) / 100
+        n_tree = c2.slider("Jumlah pohon", 50, 500, 200, step=50)
+
+        if len(x_ml) < 1:
+            st.info("Pilih minimal 1 fitur.")
+        else:
+            X_train, X_test, y_train, y_test = train_test_split(
+                data[x_ml], data[y_ml], test_size=test_size, random_state=42)
+
+            rf = RandomForestRegressor(n_estimators=n_tree, random_state=42, n_jobs=-1)
+            rf.fit(X_train, y_train)
+            pred = rf.predict(X_test)
+
+            lr = LinearRegression().fit(X_train, y_train)
+            pred_lr = lr.predict(X_test)
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("R² Random Forest", f"{r2_score(y_test, pred):.3f}")
+            m2.metric("R² Regresi Linear", f"{r2_score(y_test, pred_lr):.3f}")
+            m3.metric("RMSE", f"{np.sqrt(mean_squared_error(y_test, pred)):.3f}")
+            m4.metric("MAE", f"{mean_absolute_error(y_test, pred):.3f}")
+
+            imp = (pd.DataFrame({"Fitur": x_ml, "Importance": rf.feature_importances_})
+                   .sort_values("Importance"))
+            fig = px.bar(imp, x="Importance", y="Fitur", orientation="h",
+                         title="Feature Importance (fitur paling berpengaruh)")
+            st.plotly_chart(fig, width="stretch")
+
+            fig2 = px.scatter(x=y_test, y=pred,
+                              labels={"x": f"{y_ml} aktual", "y": f"{y_ml} prediksi"},
+                              title="Aktual vs Prediksi (data uji)")
+            fig2.add_shape(type="line", x0=y_test.min(), y0=y_test.min(),
+                           x1=y_test.max(), y1=y_test.max(), line=dict(dash="dash"))
+            st.plotly_chart(fig2, width="stretch")
+
+            st.caption("R² mendekati 1 = prediksi bagus. R² mendekati 0 atau negatif = "
+                       "model tidak lebih baik dari menebak rata-rata.")
