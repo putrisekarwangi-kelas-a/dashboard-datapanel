@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
@@ -8,11 +10,58 @@ import pandas as pd
 import plotly.express as px
 import statsmodels.api as sm
 import plotly.graph_objects as go
+px.defaults.template = "plotly_white"
+px.defaults.color_discrete_sequence = ["#6C5CE7", "#FF7AA2", "#00B8A9", "#FFB703", "#A855F7"]
+px.defaults.color_continuous_scale = ["#F4F1FF", "#A855F7", "#6C5CE7"]
 
 # ---------- Pengaturan halaman ----------
-st.set_page_config(page_title="Dashboard Data Panel Fiskal", page_icon="📊", layout="wide")
-st.title("📊 Dashboard Data Panel Fiskal Kota di Indonesia")
-st.caption("Sumber: dataset_fiskal_97_hipoFull.csv | 97 kota, 2014-2024")
+st.set_page_config(
+    page_title="Dashboard Data Panel Fiskal",
+    page_icon=str(Path(__file__).parent / "favicon.png"),
+    layout="wide",
+)
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');
+
+h1, h2, h3, h4, [data-testid="stMetricValue"] { font-family: 'Poppins', sans-serif; }
+h3, h4 { color: #6C5CE7; }
+
+/* banner utama */
+.hero {
+    background: linear-gradient(135deg, #6C5CE7 0%, #A855F7 50%, #FF7AA2 100%);
+    padding: 2rem 2.2rem; border-radius: 22px; color: white;
+    box-shadow: 0 10px 28px rgba(108, 92, 231, 0.30); margin-bottom: 1.2rem;
+}
+.hero h1 { color: white; margin: 0; font-size: 2.1rem; }
+.hero p { margin: 0.4rem 0 0; opacity: 0.92; font-size: 1.02rem; }
+
+/* kartu metrik */
+[data-testid="stMetric"] {
+    background: white; border-radius: 16px; padding: 14px 18px;
+    border-left: 6px solid #6C5CE7; box-shadow: 0 4px 14px rgba(108, 92, 231, 0.15);
+}
+[data-testid="stMetricValue"] { color: #6C5CE7; font-weight: 700; }
+
+/* tab */
+.stTabs [data-baseweb="tab-list"] { gap: 8px; }
+.stTabs [data-baseweb="tab"] {
+    background: #F4F1FF; border-radius: 12px; padding: 8px 18px;
+}
+.stTabs [aria-selected="true"] { background: #6C5CE7; }
+.stTabs [aria-selected="true"] p { color: white; }
+.stTabs [data-baseweb="tab-highlight"] { display: none; }
+
+/* sidebar */
+[data-testid="stSidebar"] { background: linear-gradient(180deg, #F4F1FF 0%, #FFE9F1 100%); }
+</style>
+
+<div class="hero">
+    <h1>Dashboard Data Panel Fiskal</h1>
+    <p>97 kota di Indonesia (2014-2024): tren, korelasi, regresi, machine learning, dan visualisasi 3D</p>
+</div>
+""", unsafe_allow_html=True)
 
 # ---------- Load data ----------
 @st.cache_data
@@ -56,9 +105,14 @@ else:
 st.subheader(f"📍 {judul} ({tahun[0]}-{tahun[1]})")
 
 # ---------- Tab ----------
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-    ["Ringkasan", "Tren", "Korelasi", "Regresi", "Machine Learning", "Regresi 3D"])
-
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    ":material/home: Ringkasan",
+    ":material/show_chart: Tren",
+    ":material/grid_on: Korelasi",
+    ":material/functions: Regresi",
+    ":material/psychology: Machine Learning",
+    ":material/view_in_ar: Regresi 3D",
+])
 # === Tab 1: Ringkasan ===
 with tab1:
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -306,9 +360,11 @@ with tab6:
         fig = go.Figure()
         fig.add_trace(go.Scatter3d(
             x=data[x1], y=data[x2], z=data[y3], mode="markers",
-            marker=dict(size=3, opacity=0.7), name="Data aktual"))
+            marker=dict(size=3, opacity=0.7, color="#6C5CE7"), name="Data aktual"))
         fig.add_trace(go.Surface(
-            x=xx, y=yy, z=zz, opacity=0.5, showscale=False, name="Bidang regresi"))
+            x=xx, y=yy, z=zz, opacity=0.5,
+            colorscale=[[0, "#C4B5FD"], [1, "#FF7AA2"]], showscale=False,
+            name="Bidang regresi"))
         fig.update_layout(
             height=650, margin=dict(l=0, r=0, t=30, b=0),
             scene=dict(xaxis_title=x1, yaxis_title=x2, zaxis_title=y3))
